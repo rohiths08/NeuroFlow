@@ -1,5 +1,5 @@
 # 🎓 Active Recall Engine: Cognitive Load-Optimized Video Learning Platform
-## Comprehensive Requirements Specification v2.0
+## Comprehensive Requirements Specification 
 
 > **Vision Statement**: Revolutionizing video-based education by transforming passive content consumption into active learning through AI-powered cognitive load analysis, multimodal assessments, and adaptive remediation.
 
