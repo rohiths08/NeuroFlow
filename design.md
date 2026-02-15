@@ -57,6 +57,455 @@ graph TB
 3. **Assessment Flow**: Frontend requests assessment → Assessment Generator uses Bedrock for question + Titan for visuals → Return multimodal assessment → User responds → Evaluator validates
 4. **Remediation Flow**: Incorrect answer → Identify answer timestamp → MediaConvert creates slowed clip → Return clip URL → Play before resuming
 
+## Frontend Architecture
+
+### Technology Stack
+
+- **Framework**: React 18 with TypeScript
+- **State Management**: Redux Toolkit for global state, React Query for server state
+- **Video Player**: Video.js with custom plugins
+- **Drawing Canvas**: Fabric.js for interactive drawing tools
+- **Styling**: Tailwind CSS with custom components
+- **Build Tool**: Vite
+- **Testing**: Vitest + React Testing Library + fast-check (property-based testing)
+
+### Frontend Directory Structure
+
+```
+frontend/
+├── src/
+│   ├── components/
+│   │   ├── video/
+│   │   │   ├── VideoPlayer.tsx           # Main video player component
+│   │   │   ├── VideoControls.tsx         # Custom playback controls
+│   │   │   ├── InterventionMarker.tsx    # Timeline markers for interventions
+│   │   │   └── ProgressTracker.tsx       # Visual progress indicator
+│   │   ├── assessment/
+│   │   │   ├── AssessmentOverlay.tsx     # Modal overlay for assessments
+│   │   │   ├── TextAssessment.tsx        # Text-based question component
+│   │   │   ├── VisualAssessment.tsx      # Visual diagram assessment
+│   │   │   ├── DrawingCanvas.tsx         # Interactive drawing interface
+│   │   │   └── FeedbackDisplay.tsx       # Evaluation feedback component
+│   │   ├── upload/
+│   │   │   ├── VideoUploader.tsx         # Drag-and-drop upload interface
+│   │   │   ├── UploadProgress.tsx        # Upload progress indicator
+│   │   │   └── ProcessingStatus.tsx      # Video processing status
+│   │   ├── dashboard/
+│   │   │   ├── LearnerDashboard.tsx      # Learner progress view
+│   │   │   ├── CreatorDashboard.tsx      # Creator analytics view
+│   │   │   ├── VideoCard.tsx             # Video thumbnail card
+│   │   │   └── AnalyticsChart.tsx        # Comprehension score charts
+│   │   ├── auth/
+│   │   │   ├── LoginForm.tsx             # Authentication form
+│   │   │   ├── RegisterForm.tsx          # User registration
+│   │   │   └── ProtectedRoute.tsx        # Route guard component
+│   │   └── common/
+│   │       ├── Button.tsx                # Reusable button component
+│   │       ├── Input.tsx                 # Form input component
+│   │       ├── Modal.tsx                 # Modal dialog component
+│   │       └── Spinner.tsx               # Loading indicator
+│   ├── hooks/
+│   │   ├── useVideoPlayer.ts             # Video player state management
+│   │   ├── useInterventions.ts           # Intervention point handling
+│   │   ├── useAssessment.ts              # Assessment submission logic
+│   │   ├── useAuth.ts                    # Authentication state
+│   │   └── useProgress.ts                # Progress tracking
+│   ├── store/
+│   │   ├── index.ts                      # Redux store configuration
+│   │   ├── slices/
+│   │   │   ├── videoSlice.ts             # Video playback state
+│   │   │   ├── assessmentSlice.ts        # Assessment state
+│   │   │   ├── authSlice.ts              # Authentication state
+│   │   │   └── progressSlice.ts          # User progress state
+│   │   └── api/
+│   │       ├── videoApi.ts               # Video API endpoints (React Query)
+│   │       ├── assessmentApi.ts          # Assessment API endpoints
+│   │       └── analyticsApi.ts           # Analytics API endpoints
+│   ├── services/
+│   │   ├── api.ts                        # Base API client (Axios)
+│   │   ├── videoService.ts               # Video-related API calls
+│   │   ├── assessmentService.ts          # Assessment API calls
+│   │   ├── authService.ts                # Authentication API calls
+│   │   └── storageService.ts             # Local storage utilities
+│   ├── types/
+│   │   ├── video.ts                      # Video-related types
+│   │   ├── assessment.ts                 # Assessment types
+│   │   ├── user.ts                       # User and auth types
+│   │   └── analytics.ts                  # Analytics types
+│   ├── utils/
+│   │   ├── timeFormat.ts                 # Time formatting utilities
+│   │   ├── validation.ts                 # Input validation
+│   │   └── drawing.ts                    # Drawing canvas utilities
+│   ├── pages/
+│   │   ├── HomePage.tsx                  # Landing page
+│   │   ├── VideoPlayerPage.tsx           # Video playback page
+│   │   ├── UploadPage.tsx                # Video upload page
+│   │   ├── DashboardPage.tsx             # User dashboard
+│   │   ├── AnalyticsPage.tsx             # Creator analytics
+│   │   └── LoginPage.tsx                 # Authentication page
+│   ├── App.tsx                           # Root application component
+│   ├── main.tsx                          # Application entry point
+│   └── routes.tsx                        # Route configuration
+├── public/
+│   └── assets/                           # Static assets
+├── tests/
+│   ├── unit/                             # Unit tests
+│   ├── integration/                      # Integration tests
+│   └── properties/                       # Property-based tests
+├── package.json
+├── tsconfig.json
+├── vite.config.ts
+└── tailwind.config.js
+```
+
+### Key Frontend Components
+
+**VideoPlayer Component**:
+- Manages video.js player instance
+- Tracks playback position and syncs with backend
+- Detects intervention points and triggers assessments
+- Handles fullscreen mode and volume persistence
+- Implements offline caching for position recovery
+
+**AssessmentOverlay Component**:
+- Displays modal overlay when intervention point is reached
+- Renders appropriate assessment type (text or visual)
+- Manages user input and submission
+- Shows feedback and micro-review clips
+- Prevents video resumption until assessment is completed
+
+**DrawingCanvas Component**:
+- Provides drawing tools (pen, arrow, circle, line)
+- Renders background image from Titan
+- Captures drawing data for evaluation
+- Supports undo/redo functionality
+- Exports drawing as structured data
+
+**State Management Flow**:
+```typescript
+// Video playback state
+videoSlice: {
+  currentVideo: Video | null,
+  playbackPosition: number,
+  isPlaying: boolean,
+  volume: number,
+  interventionPoints: InterventionPoint[],
+  currentInterventionIndex: number
+}
+
+// Assessment state
+assessmentSlice: {
+  currentAssessment: Assessment | null,
+  isDisplayed: boolean,
+  userResponse: string | DrawingData,
+  evaluationResult: EvaluationResult | null,
+  microReviewUrl: string | null
+}
+
+// Progress state
+progressSlice: {
+  completedVideos: string[],
+  assessmentHistory: AssessmentAttempt[],
+  comprehensionScores: Record<string, number>
+}
+```
+
+## Backend Architecture
+
+### Technology Stack
+
+- **Compute**: AWS Lambda (Python 3.11)
+- **API Gateway**: AWS API Gateway (REST API)
+- **Storage**: Amazon S3 (videos, clips, images)
+- **Database**: Amazon DynamoDB (metadata, progress, analytics)
+- **AI Services**: Amazon Bedrock, Amazon Titan, Amazon Transcribe
+- **Video Processing**: AWS Elemental MediaConvert, FFmpeg (in Lambda)
+- **CDN**: Amazon CloudFront
+- **Authentication**: AWS Cognito
+- **Monitoring**: AWS CloudWatch, AWS X-Ray
+- **IaC**: AWS CDK (TypeScript)
+
+### Backend Directory Structure
+
+```
+backend/
+├── lambdas/
+│   ├── processing/
+│   │   ├── orchestrator/
+│   │   │   ├── handler.py                # Processing orchestrator entry point
+│   │   │   ├── transcription.py          # Transcribe integration
+│   │   │   ├── frame_extraction.py       # Frame extraction logic
+│   │   │   └── requirements.txt
+│   │   ├── frame_extractor/
+│   │   │   ├── handler.py                # Frame extraction Lambda
+│   │   │   ├── ffmpeg_wrapper.py         # FFmpeg utilities
+│   │   │   ├── bedrock_embeddings.py     # Multimodal embedding generation
+│   │   │   └── requirements.txt
+│   │   └── cognitive_analyzer/
+│   │       ├── handler.py                # Cognitive load analysis
+│   │       ├── bedrock_client.py         # Bedrock LLM client
+│   │       ├── load_analysis.py          # Cognitive load algorithms
+│   │       └── requirements.txt
+│   ├── playback/
+│   │   ├── assessment_generator/
+│   │   │   ├── handler.py                # Assessment generation entry point
+│   │   │   ├── question_generator.py     # Text question generation
+│   │   │   ├── visual_generator.py       # Titan image generation
+│   │   │   ├── concept_classifier.py     # Spatial vs non-spatial classification
+│   │   │   └── requirements.txt
+│   │   ├── answer_evaluator/
+│   │   │   ├── handler.py                # Answer evaluation entry point
+│   │   │   ├── text_evaluator.py         # Semantic similarity evaluation
+│   │   │   ├── visual_evaluator.py       # Drawing validation
+│   │   │   ├── feedback_generator.py     # Feedback message generation
+│   │   │   └── requirements.txt
+│   │   └── micro_review_generator/
+│   │       ├── handler.py                # Micro-review generation
+│   │       ├── mediaconvert_client.py    # MediaConvert integration
+│   │       ├── transcript_search.py      # Answer location in transcript
+│   │       └── requirements.txt
+│   ├── api/
+│   │   ├── video/
+│   │   │   ├── get_video.py              # Get video metadata
+│   │   │   ├── list_videos.py            # List user videos
+│   │   │   ├── upload_video.py           # Generate upload presigned URL
+│   │   │   └── requirements.txt
+│   │   ├── assessment/
+│   │   │   ├── get_assessment.py         # Fetch assessment by ID
+│   │   │   ├── submit_response.py        # Submit user response
+│   │   │   └── requirements.txt
+│   │   ├── progress/
+│   │   │   ├── get_progress.py           # Get user progress
+│   │   │   ├── update_position.py        # Update playback position
+│   │   │   └── requirements.txt
+│   │   └── analytics/
+│   │       ├── learner_analytics.py      # Learner dashboard data
+│   │       ├── creator_analytics.py      # Creator analytics data
+│   │       └── requirements.txt
+│   └── auth/
+│       ├── register.py                   # User registration
+│       ├── login.py                      # User login
+│       └── requirements.txt
+├── shared/
+│   ├── models/
+│   │   ├── video.py                      # Video data models
+│   │   ├── assessment.py                 # Assessment data models
+│   │   ├── user.py                       # User data models
+│   │   └── progress.py                   # Progress data models
+│   ├── database/
+│   │   ├── dynamodb_client.py            # DynamoDB wrapper
+│   │   ├── video_repository.py           # Video data access
+│   │   ├── assessment_repository.py      # Assessment data access
+│   │   ├── user_repository.py            # User data access
+│   │   └── progress_repository.py        # Progress data access
+│   ├── aws/
+│   │   ├── s3_client.py                  # S3 utilities
+│   │   ├── bedrock_client.py             # Bedrock client
+│   │   ├── transcribe_client.py          # Transcribe client
+│   │   ├── mediaconvert_client.py        # MediaConvert client
+│   │   └── cognito_client.py             # Cognito authentication
+│   ├── utils/
+│   │   ├── error_handler.py              # Error handling utilities
+│   │   ├── circuit_breaker.py            # Circuit breaker implementation
+│   │   ├── retry.py                      # Retry logic
+│   │   └── logger.py                     # Structured logging
+│   └── constants.py                      # Shared constants
+├── infrastructure/
+│   ├── lib/
+│   │   ├── active-recall-stack.ts        # Main CDK stack
+│   │   ├── storage-stack.ts              # S3 and DynamoDB resources
+│   │   ├── compute-stack.ts              # Lambda functions
+│   │   ├── api-stack.ts                  # API Gateway configuration
+│   │   ├── ai-stack.ts                   # Bedrock and Titan setup
+│   │   ├── video-stack.ts                # MediaConvert and Transcribe
+│   │   ├── cdn-stack.ts                  # CloudFront distribution
+│   │   └── monitoring-stack.ts           # CloudWatch and X-Ray
+│   ├── bin/
+│   │   └── app.ts                        # CDK app entry point
+│   ├── cdk.json
+│   ├── package.json
+│   └── tsconfig.json
+├── tests/
+│   ├── unit/                             # Unit tests
+│   ├── integration/                      # Integration tests
+│   ├── properties/                       # Property-based tests (Hypothesis)
+│   └── fixtures/                         # Test data and mocks
+├── scripts/
+│   ├── deploy.sh                         # Deployment script
+│   ├── seed_data.py                      # Database seeding
+│   └── generate_test_videos.py           # Test video generation
+└── requirements.txt                      # Shared Python dependencies
+```
+
+### API Endpoints
+
+**Video Management**:
+- `POST /api/videos/upload` - Generate presigned URL for video upload
+- `GET /api/videos/{videoId}` - Get video metadata and intervention points
+- `GET /api/videos` - List videos (filtered by user role)
+- `GET /api/videos/{videoId}/status` - Get processing status
+
+**Assessment**:
+- `GET /api/assessments/{assessmentId}` - Fetch assessment for intervention point
+- `POST /api/assessments/{assessmentId}/submit` - Submit user response
+- `GET /api/assessments/{assessmentId}/micro-review` - Get micro-review clip URL
+
+**Progress Tracking**:
+- `GET /api/progress/{userId}/{videoId}` - Get user progress for video
+- `PUT /api/progress/{userId}/{videoId}/position` - Update playback position
+- `POST /api/progress/{userId}/{videoId}/complete` - Mark video as completed
+
+**Analytics**:
+- `GET /api/analytics/learner/{userId}` - Get learner dashboard data
+- `GET /api/analytics/creator/{userId}` - Get creator analytics
+- `GET /api/analytics/video/{videoId}` - Get video-specific analytics
+
+**Authentication**:
+- `POST /api/auth/register` - User registration
+- `POST /api/auth/login` - User login
+- `POST /api/auth/logout` - User logout
+- `GET /api/auth/me` - Get current user info
+
+### Lambda Layer Structure
+
+```
+layers/
+├── common/
+│   └── python/
+│       └── lib/
+│           └── python3.11/
+│               └── site-packages/
+│                   ├── boto3/
+│                   ├── requests/
+│                   └── shared/          # Shared code from backend/shared
+├── ffmpeg/
+│   └── bin/
+│       └── ffmpeg                       # FFmpeg binary for frame extraction
+└── ai/
+    └── python/
+        └── lib/
+            └── python3.11/
+                └── site-packages/
+                    ├── anthropic/
+                    └── langchain/
+```
+
+### Database Schema (DynamoDB)
+
+**Videos Table**:
+- Partition Key: `video_id` (String)
+- GSI: `creator_id-upload_timestamp-index` for creator queries
+- Attributes: title, s3_uri, duration, processing_status, transcript, frames, intervention_points
+
+**Assessments Table**:
+- Partition Key: `assessment_id` (String)
+- GSI: `video_id-timestamp-index` for video queries
+- Attributes: video_id, type, question, image_url, expected_answer, concepts
+
+**UserProgress Table**:
+- Partition Key: `user_id` (String)
+- Sort Key: `video_id` (String)
+- Attributes: last_position, completed, comprehension_score, assessment_attempts
+
+**Users Table**:
+- Partition Key: `user_id` (String)
+- GSI: `email-index` for login queries
+- Attributes: email, password_hash, role, profile, created_at
+
+**MicroReviews Table**:
+- Partition Key: `clip_id` (String)
+- GSI: `assessment_id-index` for assessment queries
+- Attributes: video_id, s3_uri, duration, original_start_time, created_at
+
+### Event-Driven Architecture
+
+**S3 Event Notifications**:
+```python
+# Triggered on video upload
+{
+  "Records": [{
+    "eventName": "ObjectCreated:Put",
+    "s3": {
+      "bucket": {"name": "active-recall-videos"},
+      "object": {"key": "uploads/video123.mp4"}
+    }
+  }]
+}
+# Triggers: Processing Orchestrator Lambda
+```
+
+**EventBridge Rules**:
+```python
+# Transcription completion event
+{
+  "source": "aws.transcribe",
+  "detail-type": "Transcribe Job State Change",
+  "detail": {
+    "TranscriptionJobStatus": "COMPLETED",
+    "TranscriptionJobName": "video123-transcription"
+  }
+}
+# Triggers: Cognitive Load Analyzer Lambda
+
+# MediaConvert completion event
+{
+  "source": "aws.mediaconvert",
+  "detail-type": "MediaConvert Job State Change",
+  "detail": {
+    "status": "COMPLETE",
+    "jobId": "clip456-job"
+  }
+}
+# Triggers: Micro-Review URL update in DynamoDB
+```
+
+### Infrastructure as Code (CDK)
+
+**Example Stack Definition**:
+```typescript
+// infrastructure/lib/compute-stack.ts
+import * as cdk from 'aws-cdk-lib';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+
+export class ComputeStack extends cdk.Stack {
+  constructor(scope: cdk.App, id: string, props?: cdk.StackProps) {
+    super(scope, id, props);
+
+    // Common Lambda layer
+    const commonLayer = new lambda.LayerVersion(this, 'CommonLayer', {
+      code: lambda.Code.fromAsset('layers/common'),
+      compatibleRuntimes: [lambda.Runtime.PYTHON_3_11],
+    });
+
+    // Processing Orchestrator Lambda
+    const orchestrator = new lambda.Function(this, 'ProcessingOrchestrator', {
+      runtime: lambda.Runtime.PYTHON_3_11,
+      handler: 'handler.lambda_handler',
+      code: lambda.Code.fromAsset('lambdas/processing/orchestrator'),
+      layers: [commonLayer],
+      timeout: cdk.Duration.minutes(5),
+      memorySize: 512,
+      environment: {
+        VIDEO_METADATA_TABLE: 'VideoMetadata',
+        TRANSCRIBE_ROLE_ARN: 'arn:aws:iam::...',
+      },
+    });
+
+    // Grant S3 read permissions
+    const videoBucket = s3.Bucket.fromBucketName(this, 'VideoBucket', 'active-recall-videos');
+    videoBucket.grantRead(orchestrator);
+
+    // Add S3 event notification
+    videoBucket.addEventNotification(
+      s3.EventType.OBJECT_CREATED,
+      new s3n.LambdaDestination(orchestrator),
+      { prefix: 'uploads/' }
+    );
+  }
+}
+```
+
 ## Components and Interfaces
 
 ### 1. Processing Orchestrator Lambda
